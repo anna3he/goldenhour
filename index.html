@@ -49,7 +49,7 @@
     }
     /* Three.js canvas fills the card background */
     .sky-canvas {
-      position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0;
+      position: absolute; top: 0; left: 0; z-index: 0;
       display: block;
     }
     /* CSS fallback — visible instantly, before WebGL renders + if WebGL fails */
@@ -372,111 +372,83 @@ function cloudColour(sa, cf) {
 // No WebGL, no shaders, no parsing issues. Works everywhere.
 // ══════════════════════════════════════════════════════════════
 function createSkyRenderer(canvas, sa, cf) {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   let W = window.innerWidth;
   let H = window.innerHeight;
-
-  // Size the canvas correctly for DPR
-  canvas.width  = W * dpr;
-  canvas.height = H * dpr;
-  canvas.style.width  = W + 'px';
-  canvas.style.height = H + 'px';
-
-  const ctx = canvas.getContext('2d');
-  // Draw in logical pixels — canvas buffer is dpr× larger for sharpness
-  ctx.scale(dpr, dpr);
-  // Reset transform each frame to avoid compound scaling with save/restore
-  const baseTransform = ctx.getTransform();
-
-  // Cloud puff data — generated once, animated every frame
-  const numPuffs = Math.round(cf * 26);
-  const puffs = [];
-  for (let k = 0; k < numPuffs; k++) {
-    const yFrac = 0.05 + Math.random() * 0.55; // upper 60% of sky
-    puffs.push({
-      x:     (Math.random()) * W * 1.4 - W * 0.2,
-      y:     yFrac * H,
-      rx:    W * (0.10 + Math.random() * 0.20),  // x radius
-      ry:    W * (0.04 + Math.random() * 0.08),  // y radius
-      alpha: 0.12 + Math.random() * 0.22,
-      speed: (0.06 + Math.random() * 0.14) * (Math.random() > 0.5 ? 1 : -1),
-      yFrac,
-    });
-  }
-
   let currentSa = sa;
   let currentCf = cf;
   let rafId = null;
   let running = true;
-  let lastT = null;
+
+  // Canvas is TRANSPARENT — only used for cloud layer on top of CSS gradient
+  canvas.width  = W;
+  canvas.height = H;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+
+  const ctx = canvas.getContext('2d', { alpha: true });
+
+  // Generate cloud puffs
+  function makePuffs(cloudFrac) {
+    const n = Math.round(cloudFrac * 22);
+    return Array.from({length: n}, () => ({
+      x:     Math.random() * W * 1.4 - W * 0.2,
+      y:     (0.04 + Math.random() * 0.50) * H,
+      rx:    W * (0.12 + Math.random() * 0.20),
+      ry:    W * (0.04 + Math.random() * 0.08),
+      alpha: 0.08 + Math.random() * 0.16,
+      speed: (0.12 + Math.random() * 0.22) * (Math.random() > 0.5 ? 1 : -1),
+    }));
+  }
+  let puffs = makePuffs(cf);
+  let lastT = 0;
 
   function drawFrame(ts) {
     if (!running) return;
     rafId = requestAnimationFrame(drawFrame);
-    const dt = lastT ? Math.min((ts - lastT) / 1000, 0.05) : 0.016;
+    const dt = Math.min((ts - lastT) / 1000, 0.05);
     lastT = ts;
 
-    // Reset transform to DPR scale base before every frame
-    ctx.setTransform(baseTransform);
+    // Clear to transparent — CSS gradient on .card shows through
+    ctx.clearRect(0, 0, W, H);
 
-    const pal = skyPalette(currentSa, currentCf);
+    if (puffs.length === 0) return;
+
     const cc  = cloudColour(currentSa, currentCf);
+    const cr  = Math.round(cc.r * 255);
+    const cg  = Math.round(cc.g * 255);
+    const cb  = Math.round(cc.b * 255);
 
-    // ── Sky gradient ──
-    const grd = ctx.createLinearGradient(0, 0, 0, H);
-    grd.addColorStop(0, pal.top);
-    grd.addColorStop(1, pal.bot);
-    ctx.fillStyle = grd;
-    ctx.fillRect(0, 0, W, H);
+    puffs.forEach(p => {
+      p.x += p.speed * dt * 18;
+      if (p.x - p.rx > W * 1.3)  p.x = -p.rx;
+      if (p.x + p.rx < 0)        p.x = W * 1.3 + p.rx;
 
-    // ── Cloud puffs ──
-    if (numPuffs > 0) {
-      const cloudR = Math.round(cc.r * 255);
-      const cloudG = Math.round(cc.g * 255);
-      const cloudB = Math.round(cc.b * 255);
+      const rGrd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.rx);
+      rGrd.addColorStop(0,   `rgba(${cr},${cg},${cb},${p.alpha.toFixed(3)})`);
+      rGrd.addColorStop(0.55,`rgba(${cr},${cg},${cb},${(p.alpha*0.35).toFixed(3)})`);
+      rGrd.addColorStop(1,   `rgba(${cr},${cg},${cb},0)`);
 
-      puffs.forEach(p => {
-        // Drift
-        p.x += p.speed * dt * W * 0.05;
-        if (p.x > W * 1.3)  p.x = -W * 0.3;
-        if (p.x < -W * 0.3) p.x = W * 1.3;
-
-        // Soft ellipse cloud via radial gradient
-        const grd2 = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.rx);
-        grd2.addColorStop(0,   `rgba(${cloudR},${cloudG},${cloudB},${p.alpha})`);
-        grd2.addColorStop(0.5, `rgba(${cloudR},${cloudG},${cloudB},${p.alpha * 0.5})`);
-        grd2.addColorStop(1,   `rgba(${cloudR},${cloudG},${cloudB},0)`);
-
-        ctx.save();
-        ctx.scale(1, p.ry / p.rx); // squash to ellipse
-        ctx.fillStyle = grd2;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y * (p.rx / p.ry), p.rx, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      });
-    }
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, p.rx, p.ry, 0, 0, Math.PI * 2);
+      ctx.fillStyle = rGrd;
+      ctx.fill();
+    });
   }
 
   rafId = requestAnimationFrame(drawFrame);
 
   return {
     update(newSa, newCf) {
+      if (newCf !== currentCf) puffs = makePuffs(newCf);
       currentSa = newSa;
       currentCf = newCf;
     },
     resize(w, h) {
       W = w; H = h;
-      canvas.width  = W * dpr;
-      canvas.height = H * dpr;
-      canvas.style.width  = W + 'px';
-      canvas.style.height = H + 'px';
-      ctx.scale(dpr, dpr);
+      canvas.width = w; canvas.height = h;
+      canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
     },
-    destroy() {
-      running = false;
-      if (rafId) cancelAnimationFrame(rafId);
-    }
+    destroy() { running = false; if (rafId) cancelAnimationFrame(rafId); }
   };
 }
 
@@ -660,11 +632,11 @@ async function populate(loc, i){
 
     // ── Init or update sky renderer ──
     const canvas = document.getElementById('skyc'+i);
-    // Always update CSS fallback background immediately — visible before WebGL paints
+    // Set card CSS background to sky gradient — this IS the sky, canvas is clouds on top
     const cardEl = canvas ? canvas.closest('.card') : null;
     if (cardEl) {
       const p = skyPalette(sa, cf);
-      cardEl.style.background = `linear-gradient(${p.ang||180}deg,${p.top},${p.bot})`;
+      cardEl.style.background = `linear-gradient(${p.ang||180}deg,${p.top} 0%,${p.bot} 100%)`;
     }
     if (canvas && !skyRenderers[i]) {
       try {

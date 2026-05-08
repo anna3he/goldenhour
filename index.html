@@ -790,6 +790,54 @@ function setWeek(v,anim=true){
 // ══════════════════════════════════════════════════════════════
 // WEEK VIEW
 // ══════════════════════════════════════════════════════════════
+// ── Week circle colour ──
+// Clear sky (cf≈0): warm golden amber gradient — beautiful golden hour
+// Partly cloudy (cf=0.3): warm tones softened, slightly desaturated
+// Mostly cloudy (cf=0.6): muted dusty rose/mauve — golden hour exists but muted
+// Overcast (cf=0.85+): flat grey — no golden hour visible through cloud
+function weekCircleColour(cf) {
+  cf = Math.min(1, Math.max(0, cf));
+  // Blend function
+  const bl = (a,b,t) => [
+    Math.round(a[0]+(b[0]-a[0])*t),
+    Math.round(a[1]+(b[1]-a[1])*t),
+    Math.round(a[2]+(b[2]-a[2])*t)
+  ];
+  const rgb = ([r,g,b]) => `rgb(${r},${g},${b})`;
+
+  // Clear: rich amber top, deep orange-gold bottom
+  const clearTop = [200, 120, 70];
+  const clearBot = [235, 160, 60];
+
+  // Partly cloudy: dusty rose-peach top, muted amber bottom
+  const partlyTop = [175, 120, 110];
+  const partlyBot = [200, 145, 110];
+
+  // Overcast: flat blue-grey — no visible golden light
+  const overTop = [120, 125, 135];
+  const overBot = [145, 148, 158];
+
+  let top, bot;
+  if (cf < 0.35) {
+    // Clear → partly cloudy
+    const t = cf / 0.35;
+    top = bl(clearTop, partlyTop, t);
+    bot = bl(clearBot, partlyBot, t);
+  } else if (cf < 0.75) {
+    // Partly cloudy → overcast
+    const t = (cf - 0.35) / 0.40;
+    top = bl(partlyTop, overTop, t);
+    bot = bl(partlyBot, overBot, t);
+  } else {
+    // Fully overcast — flat grey
+    const t = Math.min(1, (cf - 0.75) / 0.25);
+    top = bl(overTop, [105, 108, 118], t);
+    bot = bl(overBot, [125, 128, 138], t);
+  }
+
+  return { top: rgb(top), bot: rgb(bot) };
+}
+
 async function openWeek(li){
   const loc=locs[li]; if(!loc)return;
   setWeek(true);
@@ -825,7 +873,9 @@ async function openWeek(li){
       const ghS=ghD?fmt(ghD,tz):'--';
 
       // Circle: golden hour palette (sa=4) tinted by cloud
-      const gp=skyPalette(4,cf);
+      // Circle colour: golden hour palette fades to grey as cloud cover rises.
+      // At cf=0 (clear): full warm amber/gold. At cf=0.7+ (heavy cloud): flat grey, no golden hour visible.
+      const gp = weekCircleColour(cf);
       const row=document.createElement('div');
       row.className='wk-row'+(isToday?' today':'');
       row.innerHTML=`

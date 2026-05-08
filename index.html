@@ -457,23 +457,19 @@ function createSkyRenderer(canvas, sa, cf) {
 // Uses Intl.DateTimeFormat to extract LOCAL hour/minute in the
 // location's timezone — correct regardless of browser locale.
 // ══════════════════════════════════════════════════════════════
-function sunAlt(lat, lon, utcDate, tz) {
+function sunAlt(lat, lon, utcDate) {
+  // Uses UTC time + longitude — correct for any timezone regardless of browser locale.
+  // Formula: True Solar Time = UTC_minutes + eqT + 4*lon (east-positive)
+  //          Hour Angle = (TST - 720) / 4  degrees
   const R = Math.PI/180;
-  // Extract local time parts in the target timezone
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz, hour12: false,
-    year:'numeric', month:'numeric', day:'numeric',
-    hour:'numeric', minute:'numeric', second:'numeric'
-  }).formatToParts(utcDate);
-  const p = {};
-  parts.forEach(({type,value}) => { p[type] = parseInt(value, 10); });
-  // Day of year from local calendar date
-  const doy = Math.round((Date.UTC(p.year,p.month-1,p.day) - Date.UTC(p.year,0,1)) / 864e5) + 1;
-  const D = 2*Math.PI*(doy-1)/365;
+  const utcMin = utcDate.getUTCHours()*60 + utcDate.getUTCMinutes() + utcDate.getUTCSeconds()/60;
+  const doy = Math.round((Date.UTC(utcDate.getUTCFullYear(), utcDate.getUTCMonth(), utcDate.getUTCDate())
+                         - Date.UTC(utcDate.getUTCFullYear(), 0, 1)) / 864e5) + 1;
+  const D   = 2*Math.PI*(doy-1)/365;
   const eqT = 229.18*(0.000075+0.001868*Math.cos(D)-0.032077*Math.sin(D)-0.014615*Math.cos(2*D)-0.04089*Math.sin(2*D));
   const dc  = 0.006918-0.399912*Math.cos(D)+0.070257*Math.sin(D)-0.006758*Math.cos(2*D)+0.000907*Math.sin(2*D)-0.002697*Math.cos(3*D)+0.00148*Math.sin(3*D);
-  const hm  = (p.hour===24?0:p.hour)*60 + p.minute + (p.second||0)/60;
-  const ha  = (hm - (12*60 - eqT - lon*4)) / 60 * 15;
+  const TST = utcMin + eqT + 4*lon;  // True Solar Time (minutes)
+  const ha  = (TST - 720) / 4;       // Hour angle (degrees), 0° = solar noon
   return Math.asin(Math.max(-1,Math.min(1,Math.sin(lat*R)*Math.sin(dc)+Math.cos(lat*R)*Math.cos(dc)*Math.cos(ha*R))))/R;
 }
 
@@ -627,7 +623,7 @@ async function populate(loc, i){
     const uv    = Math.round(data.current?.uv_index ?? 0);
     const uvi   = uvInf(uv);
     // sunAlt now takes true UTC Date + tz string (extracts local hours internally)
-    const sa    = sunAlt(loc.lat, loc.lon, now, tz);
+    const sa    = sunAlt(loc.lat, loc.lon, now);
     const cf    = cloud/100;
 
     // ── Init or update sky renderer ──
@@ -803,7 +799,7 @@ async function openWeek(li){
   // Mirror sky palette to week bg
   const c=cache[li];
   if(c){
-    const now=new Date(), sa=sunAlt(loc.lat,loc.lon,now,c.tz), cf=(c.data.current?.cloud_cover??0)/100;
+    const now=new Date(), sa=sunAlt(loc.lat,loc.lon,now), cf=(c.data.current?.cloud_cover??0)/100;
     const p=skyPalette(sa,cf);
     document.getElementById('weekBg').style.background=`linear-gradient(180deg,${p.top},${p.bot})`;
   }

@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Golden Hour</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wdth,wght@0,75..100,400..700;1,75..100,400..700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --font: 'Instrument Sans', sans-serif;
+      --w: rgba(255,255,255,1);
+      --w70: rgba(255,255,255,0.7);
+      --w50: rgba(255,255,255,0.5);
+      --w30: rgba(255,255,255,0.3);
+      --w15: rgba(255,255,255,0.15);
+      --w08: rgba(255,255,255,0.08);
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bot: env(safe-area-inset-bottom, 0px);
+    }
+    html, body {
+      height: 100%; width: 100%; overflow: hidden;
+      font-family: var(--font); background: #0a0e14;
+      user-select: none; -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ── APP SHELL ── */
+    #app { width: 100%; height: 100%; overflow: hidden; position: relative; }
+    #vTrack {
+      width: 100%; height: 200%;
+      display: flex; flex-direction: column;
+      transition: transform 0.5s cubic-bezier(0.32,0.72,0,1);
+      will-change: transform;
+    }
+    .vscreen { width: 100%; height: 50%; flex-shrink: 0; position: relative; }
+    #carousel { width: 100%; height: 100%; overflow: hidden; }
+    #cardsTrack {
+      display: flex; width: 100%; height: 100%;
+      transition: transform 0.42s cubic-bezier(0.25,0.46,0.45,0.94);
+      will-change: transform;
+    }
+
+    /* ── CARD ── */
+    .card {
+      flex: 0 0 100%; width: 100%; height: 100%;
+      position: relative; display: flex; flex-direction: column; overflow: hidden;
+    }
+    /* Three.js canvas fills the card background */
+    .sky-canvas {
+      position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0;
+      display: block;
+    }
+    /* Subtle bottom fade so stats bar reads clearly */
+    .card-fade {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 40%;
+      background: linear-gradient(to top, rgba(0,0,0,0.22) 0%, transparent 100%);
+      z-index: 1; pointer-events: none;
+    }
+    .card-content {
+      position: relative; z-index: 2;
+      display: flex; flex-direction: column; height: 100%;
+      padding-top: calc(var(--safe-top) + 18px);
+      padding-bottom: calc(var(--safe-bot) + 6px);
+    }
+
+    /* ── HEADER ── */
+    .card-header {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 3px; padding: 0 60px;
+    }
+    .loc-row { display: flex; align-items: center; gap: 10px; }
+    .loc-btn {
+      display: flex; align-items: center; gap: 5px;
+      cursor: pointer; padding: 4px 10px; border-radius: 20px;
+      margin: 0 -10px; transition: background 0.15s; flex-shrink: 0;
+    }
+    .loc-btn:active { background: var(--w15); }
+    .loc-name { font-size: 17px; font-weight: 500; color: var(--w); letter-spacing: -0.01em; }
+    .chev { width: 14px; height: 14px; color: var(--w70); transition: transform 0.22s ease; flex-shrink: 0; }
+    .chev.open { transform: rotate(180deg); }
+    .card-dt { font-size: 13px; font-weight: 400; color: var(--w70); }
+
+    /* ── MAIN COUNTDOWN ── */
+    .card-main {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; padding: 0 24px; position: relative;
+    }
+    .time-big { display: flex; align-items: baseline; justify-content: center; line-height: 1; }
+    .tnum { font-size: clamp(76px,23vw,114px); font-weight: 300; color: var(--w); letter-spacing: -0.04em; }
+    .tunit {
+      font-size: clamp(19px,5.5vw,28px); font-weight: 400; color: var(--w);
+      opacity: 0.8; letter-spacing: -0.01em; margin-left: 3px;
+      align-self: flex-start; margin-top: 20px;
+    }
+    .tlabel { font-size: 14px; font-weight: 400; color: var(--w70); margin-top: 8px; letter-spacing: 0.02em; text-align: center; }
+    .now-word { font-size: clamp(76px,23vw,114px); font-weight: 300; color: var(--w); letter-spacing: -0.04em; line-height: 1; }
+    .gh-row { display: flex; gap: 14px; align-items: center; margin-top: 6px; }
+    .gh-tag { font-size: 14px; font-weight: 500; color: var(--w); opacity: 0.85; }
+    .gh-end { font-size: 14px; font-weight: 400; color: var(--w70); }
+
+    /* ── STATS BAR ── */
+    .stats-bar {
+      margin: 0 14px;
+      background: var(--w15);
+      backdrop-filter: blur(24px) saturate(1.5);
+      -webkit-backdrop-filter: blur(24px) saturate(1.5);
+      border-radius: 22px; padding: 16px 6px 14px;
+      display: flex; justify-content: space-around;
+    }
+    .stat { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1; min-width: 0; }
+    .stat+.stat { border-left: 1px solid var(--w15); }
+    .stat-ico { width: 20px; height: 20px; opacity: 0.65; }
+    .stat-lbl { font-size: 10px; font-weight: 500; color: var(--w50); letter-spacing: 0.06em; text-transform: uppercase; }
+    .stat-val { font-size: 13px; font-weight: 600; color: var(--w); letter-spacing: -0.02em; text-align: center; white-space: nowrap; }
+    .stat-sub { font-size: 11px; font-weight: 400; color: var(--w50); }
+
+    /* ── DOTS — bottom centre, below stats bar ── */
+    #dots {
+      display: flex; justify-content: center; align-items: center; gap: 6px;
+      padding: 10px 0 calc(var(--safe-bot) + 4px);
+      min-height: 28px;
+    }
+    .dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: rgba(255,255,255,0.38);
+      transition: all 0.28s ease;
+    }
+    .dot.active {
+      background: rgba(255,255,255,0.9);
+      width: 16px; border-radius: 2.5px;
+    }
+
+    /* ── WEEK BUTTON ── */
+    #weekBtn {
+      position: fixed; top: calc(var(--safe-top) + 16px); right: 18px; z-index: 200;
+      width: 36px; height: 36px; background: var(--w15);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      border: 1px solid var(--w30); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: background 0.2s;
+    }
+    #weekBtn:hover { background: var(--w30); }
+    #weekBtn.week-active { background: rgba(255,190,70,0.25); border-color: rgba(255,190,70,0.5); }
+
+    /* ── LOCATION DROPDOWN ── */
+    #locDrop {
+      position: fixed; top: calc(var(--safe-top) + 58px);
+      left: 50%; transform: translateX(-50%) translateY(-10px) scale(0.95);
+      width: min(340px, calc(100vw - 32px)); z-index: 400;
+      background: rgba(14,12,10,0.93);
+      backdrop-filter: blur(44px) saturate(1.8); -webkit-backdrop-filter: blur(44px) saturate(1.8);
+      border: 1px solid rgba(255,255,255,0.11); border-radius: 22px;
+      overflow: hidden; opacity: 0; pointer-events: none;
+      transform-origin: top center;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    #locDrop.open { opacity: 1; pointer-events: all; transform: translateX(-50%) translateY(0) scale(1); }
+    .drop-hdr { padding: 16px 20px 8px; font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.35); letter-spacing: 0.1em; text-transform: uppercase; }
+    #dropList { padding: 0 8px; }
+    .drop-item { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px; border-radius: 12px; cursor: pointer; transition: background 0.12s; }
+    .drop-item:hover { background: rgba(255,255,255,0.07); }
+    .drop-item.cur .di-name { color: white; font-weight: 500; }
+    .di-left { display: flex; align-items: center; gap: 10px; }
+    .di-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.2); flex-shrink: 0; }
+    .drop-item.cur .di-dot { background: rgba(255,195,80,0.9); }
+    .di-name { font-size: 16px; font-weight: 400; color: rgba(255,255,255,0.7); }
+    .di-rm { width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,0.07); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity 0.15s, background 0.15s; }
+    .drop-item:hover .di-rm { opacity: 1; }
+    .di-rm:hover { background: rgba(255,60,50,0.3); }
+    .drop-empty { padding: 10px 20px 6px; font-size: 14px; color: rgba(255,255,255,0.28); text-align: center; }
+    .drop-divider { height: 1px; background: rgba(255,255,255,0.07); margin: 6px 10px; }
+    .drop-add { display: flex; align-items: center; gap: 10px; padding: 11px 20px 16px; cursor: pointer; transition: background 0.12s; }
+    .drop-add:hover { background: rgba(255,255,255,0.05); }
+    .drop-add-ico { width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .drop-add span { font-size: 15px; font-weight: 400; color: rgba(255,255,255,0.55); }
+
+    /* ── WEEK SCREEN ── */
+    #weekScreen { width: 100%; height: 100%; position: relative; overflow: hidden; }
+    #weekBg { position: absolute; inset: 0; z-index: 0; transition: background 2s ease; }
+    #weekBg::before { content: ''; position: absolute; inset: 0; z-index: 1; background: linear-gradient(180deg, rgba(0,0,0,0.12) 0%, rgba(0,0,0,0.48) 100%); }
+    #weekContent {
+      position: relative; z-index: 3; height: 100%;
+      display: flex; flex-direction: column;
+      padding-top: calc(var(--safe-top) + 16px);
+      padding-bottom: calc(var(--safe-bot) + 12px);
+    }
+    .wk-back { display: flex; align-items: center; gap: 5px; padding: 0 20px 0 14px; cursor: pointer; width: fit-content; }
+    .wk-back span { font-size: 15px; font-weight: 400; color: rgba(255,255,255,0.7); }
+    .wk-title { padding: 12px 24px 4px; }
+    .wk-city { font-size: 22px; font-weight: 500; color: white; letter-spacing: -0.02em; }
+    .wk-sub { font-size: 13px; color: rgba(255,255,255,0.5); margin-top: 2px; }
+    #weekList { flex: 1; overflow-y: auto; padding: 8px 14px 0; -ms-overflow-style: none; scrollbar-width: none; }
+    #weekList::-webkit-scrollbar { display: none; }
+    .wk-row { display: flex; align-items: center; padding: 12px 14px; border-radius: 16px; margin-bottom: 5px; background: rgba(255,255,255,0.08); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.06); }
+    .wk-row.today { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.13); }
+    .wk-circle { width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0; margin-right: 14px; }
+    .wk-info { flex: 1; min-width: 0; }
+    .wk-day { font-size: 15px; font-weight: 500; color: white; display: flex; align-items: center; gap: 8px; }
+    .today-pill { font-size: 10px; font-weight: 600; background: rgba(255,185,50,0.22); color: rgba(255,205,90,1); padding: 2px 7px; border-radius: 20px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .wk-times { font-size: 13px; color: rgba(255,255,255,0.5); margin-top: 2px; }
+    .wk-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+    .wk-sunset { font-size: 15px; font-weight: 500; color: white; letter-spacing: -0.01em; }
+    .wk-gh { font-size: 11px; color: rgba(255,195,90,0.8); letter-spacing: 0.03em; text-transform: uppercase; }
+
+    /* ── SEARCH ── */
+    #searchOverlay {
+      position: fixed; inset: 0; z-index: 600;
+      background: rgba(6,4,2,0.92);
+      backdrop-filter: blur(32px) saturate(1.6); -webkit-backdrop-filter: blur(32px) saturate(1.6);
+      display: flex; flex-direction: column;
+      padding: calc(var(--safe-top) + 60px) 20px 20px;
+      opacity: 0; pointer-events: none; transition: opacity 0.24s ease;
+    }
+    #searchOverlay.open { opacity: 1; pointer-events: all; }
+    .s-bar { display: flex; align-items: center; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.17); border-radius: 14px; padding: 11px 16px; gap: 10px; margin-bottom: 14px; }
+    .s-bar svg { opacity: 0.4; flex-shrink: 0; }
+    #sInput { background: none; border: none; outline: none; font-family: var(--font); font-size: 17px; color: white; width: 100%; }
+    #sInput::placeholder { color: rgba(255,255,255,0.3); }
+    #sResults { overflow-y: auto; flex: 1; }
+    .sr-item { padding: 13px 14px; border-radius: 12px; cursor: pointer; transition: background 0.12s; }
+    .sr-item:hover,.sr-item:active { background: rgba(255,255,255,0.09); }
+    .sr-city { font-size: 16px; font-weight: 500; color: white; display: block; }
+    .sr-reg { font-size: 13px; color: rgba(255,255,255,0.38); display: block; }
+    #sClose { position: absolute; top: calc(var(--safe-top) + 18px); right: 20px; background: none; border: none; color: rgba(255,255,255,0.5); font-family: var(--font); font-size: 15px; cursor: pointer; padding: 8px; }
+
+    /* EMPTY */
+    .empty-card { flex: 0 0 100%; width: 100%; height: 100%; background: linear-gradient(160deg,#1a1820,#0e0d12); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: pointer; }
+    .empty-ico { width: 52px; height: 52px; border-radius: 50%; background: var(--w08); border: 1px solid var(--w15); display: flex; align-items: center; justify-content: center; }
+    .empty-txt { font-size: 16px; color: rgba(255,255,255,0.32); }
+
+    /* SPINNER */
+    .spin-wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 5; }
+    .spinner { width: 26px; height: 26px; border: 2px solid rgba(255,255,255,0.22); border-top-color: white; border-radius: 50%; animation: spin 0.75s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* UV */
+    .uv-low{color:rgba(255,255,255,0.95)}.uv-mod{color:#ffe066}.uv-hi{color:#ffb347}.uv-vhi{color:#ff6b6b}.uv-ext{color:#cf6bff}
+
+    /* Dim overlay */
+    #dim { position: fixed; inset: 0; z-index: 350; pointer-events: none; }
+    #dim.on { pointer-events: all; }
+  </style>
+</head>
+<body>
+
+<button id="weekBtn" aria-label="This week">
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="4" width="18" height="18" rx="3"/>
+    <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+    <line x1="3" y1="10" x2="21" y2="10"/>
+    <circle cx="8" cy="14" r="1" fill="white"/><circle cx="12" cy="14" r="1" fill="white"/>
+    <circle cx="8" cy="18" r="1" fill="white"/><circle cx="12" cy="18" r="1" fill="white"/>
+  </svg>
+</button>
+
+<div id="dim"></div>
+
+<div id="locDrop">
+  <div class="drop-hdr">Locations</div>
+  <div id="dropList"></div>
+  <div class="drop-divider"></div>
+  <div class="drop-add" id="dropAdd">
+    <div class="drop-add-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
+    <span>Add a city</span>
+  </div>
+</div>
+
+<div id="searchOverlay">
+  <button id="sClose">Cancel</button>
+  <div class="s-bar">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input id="sInput" type="text" placeholder="Search city…" autocomplete="off" autocorrect="off" spellcheck="false"/>
+  </div>
+  <div id="sResults"></div>
+</div>
+
+<div id="app">
+  <div id="vTrack">
+
+    <div class="vscreen" id="mainScreen">
+      <div id="carousel">
+        <div id="cardsTrack"></div>
+      </div>
+    </div>
+
+    <div class="vscreen" id="weekScreen">
+      <div id="weekBg"></div>
+      <div id="weekContent">
+        <div class="wk-back" id="wkBack">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+          <span>Back</span>
+        </div>
+        <div class="wk-title">
+          <div class="wk-city" id="wkCity">—</div>
+          <div class="wk-sub">7-Day Golden Hour Forecast</div>
+        </div>
+        <div id="weekList"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Three.js r128 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+'use strict';
+
+// ══════════════════════════════════════════════════════════════
+// SKY COLOUR ENGINE  (pure JS, no assets)
+// ══════════════════════════════════════════════════════════════
+function skyPalette(sa, cf) {
+  cf = Math.min(1, Math.max(0, cf));
+  const bl = (a,b,t) => [
+    Math.round(a[0]+(b[0]-a[0])*t),
+    Math.round(a[1]+(b[1]-a[1])*t),
+    Math.round(a[2]+(b[2]-a[2])*t)
+  ];
+  const hex = ([r,g,b]) => `rgb(${r},${g},${b})`;
+
+  if (sa < -6) {
+    return { top:hex(bl([12,10,22],[35,30,50],cf)), bot:hex(bl([18,13,28],[48,42,58],cf)), cf };
+  }
+  if (sa < 0) {
+    const p=(sa+6)/6;
+    return { top:hex(bl(bl([52,35,85],[85,75,95],cf),bl([95,75,135],[105,95,115],cf),p)),
+             bot:hex(bl(bl([205,115,65],[165,135,120],cf),bl([135,95,145],[140,120,135],cf),p)), cf };
+  }
+  if (sa < 8) {
+    const p=sa/8;
+    return { top:hex(bl(bl([95,75,135],[115,95,155],cf),bl([135,110,170],[110,105,125],cf),p)),
+             bot:hex(bl(bl([230,135,52],[180,150,120],cf),bl([225,143,60],[178,150,125],cf),p)), cf };
+  }
+  if (sa < 18) {
+    const p=(sa-8)/10;
+    return { top:hex(bl(bl([135,110,170],[110,105,125],cf),bl([68,143,210],[105,123,143],cf),p)),
+             bot:hex(bl(bl([200,160,195],[160,157,170],cf),bl([153,203,244],[145,170,190],cf),p)), cf };
+  }
+  const p=Math.min(1,(sa-18)/42);
+  const cT=bl([68,143,210],[38,108,192],p), cB=bl([145,198,240],[128,190,240],p);
+  const oT=bl([155,165,175],[162,170,182],p), oB=bl([192,200,210],[198,205,218],p);
+  return { top:hex(bl(cT,oT,cf)), bot:hex(bl(cB,oB,cf)), cf };
+}
+
+// ══════════════════════════════════════════════════════════════
+// CLOUD COLOUR  — shifts from white/cream → grey-blue as cf rises
+// At golden hour the clouds get warm amber/orange edges
+// ══════════════════════════════════════════════════════════════
+function cloudColour(sa, cf) {
+  // base cloud: pure white for clear, dark grey for overcast
+  let r,g,b;
+  if (sa < 0) {
+    // night/twilight clouds: dark purple-grey → warm amber edge
+    r = 180-cf*60; g = 150-cf*60; b = 200-cf*80;
+  } else if (sa < 8) {
+    // golden hour: warm lit clouds
+    r = 240-cf*40; g = 195-cf*50; b = 150-cf*60;
+  } else {
+    // daytime: white → grey as cf increases
+    r = 255-cf*90; g = 255-cf*85; b = 255-cf*75;
+  }
+  return { r: Math.round(r)/255, g: Math.round(g)/255, b: Math.round(b)/255 };
+}
+
+// ══════════════════════════════════════════════════════════════
+// THREE.JS SKY + CLOUD RENDERER
+// One renderer per card, animated independently
+// ══════════════════════════════════════════════════════════════
+function createSkyRenderer(canvas, sa, cf) {
+  const W = canvas.offsetWidth  || window.innerWidth;
+  const H = canvas.offsetHeight || window.innerHeight;
+
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: false, antialias: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  renderer.setSize(W, H);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-W/2, W/2, H/2, -H/2, 0.1, 100);
+  camera.position.z = 10;
+
+  // ── Gradient background plane ──
+  const pal = skyPalette(sa, cf);
+  const bgGeo = new THREE.PlaneGeometry(W*2, H*2);
+  const bgMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTop: { value: new THREE.Color(pal.top) },
+      uBot: { value: new THREE.Color(pal.bot) },
+      uH:   { value: H }
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }
+    `,
+    fragmentShader: `
+      uniform vec3 uTop; uniform vec3 uBot;
+      varying vec2 vUv;
+      void main(){ gl_FragColor=vec4(mix(uBot,uTop,vUv.y),1.0); }
+    `,
+    depthWrite: false
+  });
+  const bgMesh = new THREE.Mesh(bgGeo, bgMat);
+  bgMesh.position.z = -5;
+  scene.add(bgMesh);
+
+  // ── Cloud sprite texture (procedural, soft) ──
+  // Draw a radial gradient to a 2D canvas once, use as texture
+  const cloudTex = (() => {
+    const size = 256;
+    const c2 = document.createElement('canvas');
+    c2.width = c2.height = size;
+    const ctx = c2.getContext('2d');
+    const grad = ctx.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
+    grad.addColorStop(0,   'rgba(255,255,255,0.55)');
+    grad.addColorStop(0.35,'rgba(255,255,255,0.30)');
+    grad.addColorStop(0.65,'rgba(255,255,255,0.10)');
+    grad.addColorStop(1,   'rgba(255,255,255,0.00)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,size,size);
+    const t = new THREE.CanvasTexture(c2);
+    return t;
+  })();
+
+  // ── Build cloud puffs ──
+  // Number of puffs scales with cloud fraction
+  const MAX_PUFFS = 28;
+  const minPuffs  = Math.round(cf * 4);
+  const numPuffs  = Math.max(minPuffs, Math.round(cf * MAX_PUFFS));
+
+  const cloudPuffs = [];
+  const cc = cloudColour(sa, cf);
+  const puffColour = new THREE.Color(cc.r, cc.g, cc.b);
+
+  for (let k = 0; k < numPuffs; k++) {
+    const puffW = W * (0.22 + Math.random() * 0.42);
+    const puffH = puffW * (0.38 + Math.random() * 0.28);
+    const geo   = new THREE.PlaneGeometry(puffW, puffH);
+    const mat   = new THREE.MeshBasicMaterial({
+      map: cloudTex, transparent: true,
+      opacity: cf * (0.25 + Math.random() * 0.35),
+      color: puffColour, depthWrite: false, blending: THREE.NormalBlending
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+
+    // Distribute vertically: clouds prefer upper 60% of sky
+    const yBand = Math.random();
+    mesh.position.x = (Math.random() - 0.5) * W * 1.6;
+    mesh.position.y = (0.1 + yBand * 0.7) * H - H/2;
+    mesh.position.z = -2 + Math.random() * 1.5;
+
+    // Drift speed — slower at top (higher altitude), faster at bottom
+    const speed = (0.008 + Math.random() * 0.018) * W * (1 - yBand * 0.5);
+    const dir   = Math.random() > 0.5 ? 1 : -1;
+    mesh.userData = { speed: speed * dir, origX: mesh.position.x };
+
+    scene.add(mesh);
+    cloudPuffs.push(mesh);
+  }
+
+  // ── Animation loop ──
+  let rafId = null;
+  let running = true;
+
+  function animate() {
+    if (!running) return;
+    rafId = requestAnimationFrame(animate);
+
+    // Drift puffs
+    const halfW = W * 0.85;
+    cloudPuffs.forEach(p => {
+      p.position.x += p.userData.speed * 0.016; // ~60fps normalised
+      // Wrap around when off-screen
+      if (p.userData.speed > 0 && p.position.x > halfW + W * 0.3) {
+        p.position.x = -halfW - W * 0.3;
+      } else if (p.userData.speed < 0 && p.position.x < -halfW - W * 0.3) {
+        p.position.x = halfW + W * 0.3;
+      }
+    });
+
+    renderer.render(scene, camera);
+  }
+
+  animate();
+
+  return {
+    update(newSa, newCf) {
+      const newPal = skyPalette(newSa, newCf);
+      bgMat.uniforms.uTop.value.set(newPal.top);
+      bgMat.uniforms.uBot.value.set(newPal.bot);
+      const nc = cloudColour(newSa, newCf);
+      cloudPuffs.forEach(p => {
+        p.material.color.setRGB(nc.r, nc.g, nc.b);
+        p.material.opacity = newCf * (0.25 + Math.random()*0.35);
+      });
+    },
+    getBackground() {
+      const p = skyPalette(sa, cf);
+      return `linear-gradient(180deg,${p.top},${p.bot})`;
+    },
+    resize(w, h) {
+      renderer.setSize(w, h);
+      camera.left=-w/2; camera.right=w/2; camera.top=h/2; camera.bottom=-h/2;
+      camera.updateProjectionMatrix();
+    },
+    destroy() {
+      running = false;
+      if (rafId) cancelAnimationFrame(rafId);
+      renderer.dispose();
+      cloudTex.dispose();
+    }
+  };
+}
+
+// ══════════════════════════════════════════════════════════════
+// SUN ALTITUDE
+// Uses Intl.DateTimeFormat to extract LOCAL hour/minute in the
+// location's timezone — correct regardless of browser locale.
+// ══════════════════════════════════════════════════════════════
+function sunAlt(lat, lon, utcDate, tz) {
+  const R = Math.PI/180;
+  // Extract local time parts in the target timezone
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false,
+    year:'numeric', month:'numeric', day:'numeric',
+    hour:'numeric', minute:'numeric', second:'numeric'
+  }).formatToParts(utcDate);
+  const p = {};
+  parts.forEach(({type,value}) => { p[type] = parseInt(value, 10); });
+  // Day of year from local calendar date
+  const doy = Math.round((Date.UTC(p.year,p.month-1,p.day) - Date.UTC(p.year,0,1)) / 864e5) + 1;
+  const D = 2*Math.PI*(doy-1)/365;
+  const eqT = 229.18*(0.000075+0.001868*Math.cos(D)-0.032077*Math.sin(D)-0.014615*Math.cos(2*D)-0.04089*Math.sin(2*D));
+  const dc  = 0.006918-0.399912*Math.cos(D)+0.070257*Math.sin(D)-0.006758*Math.cos(2*D)+0.000907*Math.sin(2*D)-0.002697*Math.cos(3*D)+0.00148*Math.sin(3*D);
+  const hm  = (p.hour===24?0:p.hour)*60 + p.minute + (p.second||0)/60;
+  const ha  = (hm - (12*60 - eqT - lon*4)) / 60 * 15;
+  return Math.asin(Math.max(-1,Math.min(1,Math.sin(lat*R)*Math.sin(dc)+Math.cos(lat*R)*Math.cos(dc)*Math.cos(ha*R))))/R;
+}
+
+// ══════════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════════
+function uvInf(u){ if(u<=2)return{cls:'uv-low',lbl:'Low'}; if(u<=5)return{cls:'uv-mod',lbl:'Moderate'}; if(u<=7)return{cls:'uv-hi',lbl:'High'}; if(u<=10)return{cls:'uv-vhi',lbl:'Very High'}; return{cls:'uv-ext',lbl:'Extreme'}; }
+function skyLbl(c){ if(c>80)return'Overcast'; if(c>50)return'Mostly Cloudy'; if(c>20)return'Partly Cloudy'; return'Clear'; }
+function fmt(utcDate, tz){ return utcDate.toLocaleTimeString('en-AU',{timeZone:tz,hour:'numeric',minute:'2-digit'}); }
+
+// Parse Open-Meteo date strings like "2026-05-08T20:05" which are in LOCAL timezone (no Z suffix).
+// We must NOT let JS treat them as UTC. Strategy: parse as if UTC, measure the offset for that tz,
+// then shift back so the resulting Date represents the correct UTC instant.
+function parseOMDate(str, tz) {
+  if (!str) return null;
+  // Parse naively as UTC
+  const naive = new Date(str + 'Z');
+  // Ask Intl what local time this naive UTC corresponds to in the target tz
+  const fmt2 = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false,
+    year:'numeric',month:'2-digit',day:'2-digit',
+    hour:'2-digit',minute:'2-digit',second:'2-digit'
+  });
+  const parts = fmt2.formatToParts(naive);
+  const p2 = {};
+  parts.forEach(({type,value}) => { p2[type] = parseInt(value,10); });
+  // Reconstruct what the tz thinks the UTC is for that local time
+  const tzLocal = new Date(Date.UTC(p2.year,p2.month-1,p2.day,p2.hour===24?0:p2.hour,p2.minute,p2.second||0));
+  // offset = tzLocal - naive  (how far tz is from UTC at this point)
+  const offsetMs = tzLocal - naive;
+  // Correct: str is local time, so true UTC = naive(as-UTC) - offset
+  return new Date(naive.getTime() - offsetMs);
+}
+
+// ══════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════
+let locs = JSON.parse(localStorage.getItem('gh4_locs')||'[]');
+let idx = 0;
+let cache = {};       // idx -> { tz, data }
+let skyRenderers = {}; // idx -> skyRenderer instance
+let dropOpen = false;
+let weekVis  = false;
+
+if (!locs.length) {
+  locs = [{name:'Sydney',country:'AU',lat:-33.8688,lon:151.2093,displayName:'Sydney, AU'}];
+  saveLocs();
+}
+function saveLocs(){ localStorage.setItem('gh4_locs',JSON.stringify(locs)); }
+
+// ══════════════════════════════════════════════════════════════
+// API
+// ══════════════════════════════════════════════════════════════
+async function fetchW(lat,lon){
+  const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=cloud_cover,uv_index&daily=sunset,sunrise&timezone=auto&forecast_days=1`);
+  if(!r.ok) throw new Error('weather');
+  return r.json();
+}
+async function fetchWk(lat,lon){
+  const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=sunset,sunrise,cloud_cover_mean&timezone=auto&forecast_days=8`);
+  if(!r.ok) throw new Error('week');
+  return r.json();
+}
+async function searchP(q){
+  const r=await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&addressdetails=1&limit=7`,{headers:{'Accept-Language':'en'}});
+  return r.ok?r.json():[];
+}
+
+// ══════════════════════════════════════════════════════════════
+// DOTS — rendered inside the card-content (below stats)
+// ══════════════════════════════════════════════════════════════
+function renderDots(){
+  document.querySelectorAll('.dots-row').forEach(el=>{
+    el.innerHTML='';
+    if(locs.length<=1)return;
+    locs.forEach((_,i)=>{
+      const d=document.createElement('div');
+      d.className='dot'+(i===idx?' active':'');
+      el.appendChild(d);
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// CARD TEMPLATE
+// ══════════════════════════════════════════════════════════════
+function cardHTML(loc, i){
+  return `<div class="card" data-i="${i}">
+    <canvas class="sky-canvas" id="skyc${i}"></canvas>
+    <div class="card-fade"></div>
+    <div class="card-content">
+      <div class="card-header">
+        <div class="loc-row">
+          <div class="loc-btn" id="locbtn${i}">
+            <span class="loc-name">${loc.displayName}</span>
+            <svg class="chev" id="chev${i}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+        </div>
+        <div class="card-dt" id="dt${i}">—</div>
+      </div>
+      <div class="card-main">
+        <div class="spin-wrap" id="spin${i}"><div class="spinner"></div></div>
+        <div id="main${i}" style="display:none;text-align:center"></div>
+      </div>
+      <div class="stats-bar">
+        <div class="stat">
+          <svg class="stat-ico" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"/><line x1="19.78" y1="4.22" x2="17.66" y2="6.34"/><line x1="6.34" y1="17.66" x2="4.22" y2="19.78"/></svg>
+          <span class="stat-lbl">Golden Hour</span>
+          <span class="stat-val" id="sv0${i}">—</span>
+          <span class="stat-sub" id="sv1${i}">—</span>
+        </div>
+        <div class="stat">
+          <svg class="stat-ico" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>
+          <span class="stat-lbl">Cloud</span>
+          <span class="stat-val" id="sv2${i}">—</span>
+          <span class="stat-sub" id="sv3${i}">—</span>
+        </div>
+        <div class="stat">
+          <svg class="stat-ico" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+          <span class="stat-lbl">UV Index</span>
+          <span class="stat-val" id="sv4${i}">—</span>
+          <span class="stat-sub" id="sv5${i}">—</span>
+        </div>
+      </div>
+      <div class="dots-row" id="dots${i}" style="display:flex;justify-content:center;align-items:center;gap:6px;padding:10px 0 calc(env(safe-area-inset-bottom,0px) + 4px);min-height:28px;"></div>
+    </div>
+  </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// POPULATE
+// ══════════════════════════════════════════════════════════════
+async function populate(loc, i){
+  try {
+    const data = await fetchW(loc.lat, loc.lon);
+    const tz   = data.timezone;
+    cache[i]   = {tz, data};
+
+    const now = new Date(); // true UTC now
+    // Open-Meteo returns sunset/sunrise in LOCAL timezone (no Z suffix) — use parseOMDate
+    const sunsetD = parseOMDate(data.daily?.sunset?.[0], tz);
+    const ghStart = sunsetD ? new Date(sunsetD.getTime()-55*60000) : null;
+    const sunsetS = sunsetD ? fmt(sunsetD,tz) : '--';
+    const ghS     = ghStart ? fmt(ghStart,tz) : '--';
+
+    const isGH   = ghStart && sunsetD && now>=ghStart && now<=sunsetD;
+    const mUntil = ghStart ? Math.round((ghStart-now)/60000) : null;
+    const isPast = mUntil!==null && mUntil<0 && !isGH;
+
+    const cloud = data.current?.cloud_cover ?? 0;
+    const uv    = Math.round(data.current?.uv_index ?? 0);
+    const uvi   = uvInf(uv);
+    // sunAlt now takes true UTC Date + tz string (extracts local hours internally)
+    const sa    = sunAlt(loc.lat, loc.lon, now, tz);
+    const cf    = cloud/100;
+
+    // ── Init or update sky renderer ──
+    const canvas = document.getElementById('skyc'+i);
+    if (canvas && !skyRenderers[i]) {
+      // Size canvas to card
+      canvas.width  = canvas.offsetWidth  || window.innerWidth;
+      canvas.height = canvas.offsetHeight || window.innerHeight;
+      skyRenderers[i] = createSkyRenderer(canvas, sa, cf);
+    } else if (canvas && skyRenderers[i]) {
+      skyRenderers[i].update(sa, cf);
+    }
+
+    // Datetime
+    const dtEl = document.getElementById('dt'+i);
+    if(dtEl){
+      const ds=now.toLocaleDateString('en-AU',{timeZone:tz,weekday:'short',day:'numeric',month:'short'});
+      const ts=now.toLocaleTimeString('en-AU',{timeZone:tz,hour:'numeric',minute:'2-digit'});
+      dtEl.textContent=`${ds}, ${ts}`;
+    }
+
+    // Main display
+    const spinEl=document.getElementById('spin'+i), mainEl=document.getElementById('main'+i);
+    if(spinEl) spinEl.style.display='none';
+    if(mainEl){
+      mainEl.style.display='block';
+      if(isGH){
+        mainEl.innerHTML=`<div class="now-word">Now</div><div class="gh-row"><span class="gh-tag">Golden Hour</span><span class="gh-end">Ends ${sunsetS}</span></div>`;
+      } else if(isPast){
+        mainEl.innerHTML=`<div style="font-size:clamp(52px,16vw,82px);font-weight:300;color:rgba(255,255,255,0.45);letter-spacing:-0.04em">—</div><div class="tlabel">Golden hour passed</div>`;
+      } else if(mUntil!==null&&mUntil>=0){
+        const h=Math.floor(mUntil/60),m=mUntil%60;
+        mainEl.innerHTML=h>0
+          ?`<div class="time-big"><span class="tnum">${h}</span><span class="tunit">h</span><span style="width:5px;display:inline-block"></span><span class="tnum">${m}</span><span class="tunit">min</span></div><div class="tlabel">Til Golden Hour</div>`
+          :`<div class="time-big"><span class="tnum">${m}</span><span class="tunit">min</span></div><div class="tlabel">Til Golden Hour</div>`;
+      } else {
+        mainEl.innerHTML=`<div class="time-big"><span class="tnum">—</span></div><div class="tlabel">No data</div>`;
+      }
+    }
+
+    // Stats
+    const sv=id=>document.getElementById(id+i);
+    if(sv('sv0')) sv('sv0').textContent=`${ghS} – ${sunsetS}`;
+    if(sv('sv1')) sv('sv1').textContent='55 mins';
+    if(sv('sv2')) sv('sv2').textContent=`${cloud}%`;
+    if(sv('sv3')) sv('sv3').textContent=skyLbl(cloud);
+    if(sv('sv4')){ sv('sv4').textContent=uv; sv('sv4').className='stat-val '+uvi.cls; }
+    if(sv('sv5')) sv('sv5').textContent=uvi.lbl;
+
+    // Sync week bg
+    if(weekVis && parseInt(document.getElementById('wkCity').dataset.li||'-1')===i){
+      const p=skyPalette(sa,cf);
+      document.getElementById('weekBg').style.background=`linear-gradient(180deg,${p.top},${p.bot})`;
+    }
+
+  } catch(e){
+    console.error('populate',e);
+    const sp=document.getElementById('spin'+i);
+    if(sp) sp.innerHTML='<span style="color:rgba(255,255,255,0.35);font-size:13px">Failed to load</span>';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// RENDER CARDS
+// ══════════════════════════════════════════════════════════════
+const track=document.getElementById('cardsTrack');
+
+function renderCards(){
+  // Destroy existing renderers
+  Object.values(skyRenderers).forEach(r=>r.destroy());
+  skyRenderers={};
+  track.innerHTML='';
+
+  if(!locs.length){
+    const e=document.createElement('div');
+    e.className='empty-card';
+    e.innerHTML=`<div class="empty-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div><span class="empty-txt">Add a location</span>`;
+    e.addEventListener('click',openSearch);
+    track.appendChild(e);
+    document.getElementById('weekBtn').style.opacity='0.35';
+    return;
+  }
+
+  document.getElementById('weekBtn').style.opacity='1';
+  locs.forEach((loc,i)=>{
+    const w=document.createElement('div');
+    w.innerHTML=cardHTML(loc,i);
+    track.appendChild(w.firstElementChild);
+    // Slight stagger to avoid thundering-herd API calls
+    setTimeout(()=>populate(loc,i), i*180);
+  });
+
+  goTo(idx,false);
+  renderDrop();
+  renderDots();
+}
+
+// ══════════════════════════════════════════════════════════════
+// CAROUSEL
+// ══════════════════════════════════════════════════════════════
+function goTo(i, anim=true){
+  idx=Math.max(0,Math.min(i,locs.length-1));
+  if(!anim){
+    track.style.transition='none';
+    requestAnimationFrame(()=>{ track.style.transform=`translateX(-${idx*100}%)`; requestAnimationFrame(()=>track.style.transition=''); });
+  } else {
+    track.style.transform=`translateX(-${idx*100}%)`;
+  }
+  renderDots();
+  renderDrop();
+  syncChevs();
+}
+
+function syncChevs(){ document.querySelectorAll('.chev').forEach(c=>c.classList.toggle('open',dropOpen)); }
+
+let hx0=0,hy0=0,hdrag=false,hdx=0;
+track.addEventListener('touchstart',e=>{ if(weekVis)return; hx0=e.touches[0].clientX;hy0=e.touches[0].clientY;hdrag=true;hdx=0;track.style.transition='none'; },{passive:true});
+track.addEventListener('touchmove',e=>{ if(!hdrag||weekVis)return; const dx=e.touches[0].clientX-hx0,dy=e.touches[0].clientY-hy0; if(Math.abs(dy)>Math.abs(dx)*1.4&&hdx===0){hdrag=false;return;} hdx=dx; track.style.transform=`translateX(calc(${-idx*100}% + ${dx}px))`; },{passive:true});
+track.addEventListener('touchend',()=>{ if(!hdrag)return;hdrag=false; track.style.transition='transform 0.42s cubic-bezier(0.25,0.46,0.45,0.94)'; const thr=window.innerWidth*0.22; if(hdx<-thr&&idx<locs.length-1)goTo(idx+1); else if(hdx>thr&&idx>0)goTo(idx-1); else goTo(idx); },{passive:true});
+
+let md=false,mx0=0,mdx=0;
+track.addEventListener('mousedown',e=>{ if(weekVis)return;md=true;mx0=e.clientX;mdx=0;track.style.transition='none';track.style.cursor='grabbing'; });
+window.addEventListener('mousemove',e=>{ if(!md)return;mdx=e.clientX-mx0;track.style.transform=`translateX(calc(${-idx*100}% + ${mdx}px))`; });
+window.addEventListener('mouseup',()=>{ if(!md)return;md=false;track.style.cursor=''; track.style.transition='transform 0.42s cubic-bezier(0.25,0.46,0.45,0.94)'; const thr=window.innerWidth*0.2; if(mdx<-thr&&idx<locs.length-1)goTo(idx+1); else if(mdx>thr&&idx>0)goTo(idx-1); else goTo(idx); });
+
+// ══════════════════════════════════════════════════════════════
+// VERTICAL SWIPE (main ↔ week)
+// ══════════════════════════════════════════════════════════════
+const vTrack=document.getElementById('vTrack');
+let vy0=0,vStartX=0,vdragging=false,vDy=0,vActive=false;
+
+document.getElementById('app').addEventListener('touchstart',e=>{ vy0=e.touches[0].clientY;vStartX=e.touches[0].clientX;vActive=true;vDy=0;vdragging=false; },{passive:true});
+document.getElementById('app').addEventListener('touchmove',e=>{
+  if(!vActive)return;
+  const dy=e.touches[0].clientY-vy0,dx=e.touches[0].clientX-vStartX;
+  if(!vdragging){ if(Math.abs(dy)>10){ if(Math.abs(dy)>Math.abs(dx)*0.7)vdragging=true; else{vActive=false;return;} } else return; }
+  vDy=dy;
+  const base=weekVis?-50:0,pct=base+(dy/window.innerHeight)*50;
+  vTrack.style.transition='none';
+  vTrack.style.transform=`translateY(${Math.max(-50,Math.min(0,pct))}%)`;
+},{passive:true});
+document.getElementById('app').addEventListener('touchend',()=>{
+  if(!vdragging){vActive=false;return;}
+  vActive=false;vdragging=false;
+  const thr=window.innerHeight*0.14;
+  if(!weekVis&&vDy<-thr)openWeek(idx); else if(weekVis&&vDy>thr)closeWeek(); else setWeek(weekVis);
+},{passive:true});
+
+function setWeek(v,anim=true){
+  weekVis=v;
+  vTrack.style.transition=anim?'transform 0.5s cubic-bezier(0.32,0.72,0,1)':'none';
+  vTrack.style.transform=v?'translateY(-50%)':'translateY(0)';
+  document.getElementById('weekBtn').classList.toggle('week-active',v);
+}
+
+// ══════════════════════════════════════════════════════════════
+// WEEK VIEW
+// ══════════════════════════════════════════════════════════════
+async function openWeek(li){
+  const loc=locs[li]; if(!loc)return;
+  setWeek(true);
+  const cityEl=document.getElementById('wkCity');
+  cityEl.textContent=loc.displayName; cityEl.dataset.li=li;
+
+  // Mirror sky palette to week bg
+  const c=cache[li];
+  if(c){
+    const now=new Date(), sa=sunAlt(loc.lat,loc.lon,now,c.tz), cf=(c.data.current?.cloud_cover??0)/100;
+    const p=skyPalette(sa,cf);
+    document.getElementById('weekBg').style.background=`linear-gradient(180deg,${p.top},${p.bot})`;
+  }
+
+  const wkList=document.getElementById('weekList');
+  wkList.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:120px"><div class="spinner"></div></div>`;
+  try {
+    const data=await fetchWk(loc.lat,loc.lon);
+    const tz=data.timezone||c?.tz||'UTC';
+    const days=data.daily;
+    const todayStr=new Date().toLocaleDateString('en-AU',{timeZone:tz});
+    wkList.innerHTML='';
+
+    for(let j=0;j<Math.min(8,days.time?.length||0);j++){
+      const sunsetD=parseOMDate(days.sunset?.[j], tz);
+      const ghD=sunsetD?new Date(sunsetD.getTime()-55*60000):null;
+      const cloudMean=days.cloud_cover_mean?.[j]??30;
+      const cf=cloudMean/100;
+      const dateObj=new Date(days.time[j]+'T12:00:00');
+      const isToday=dateObj.toLocaleDateString('en-AU',{timeZone:tz})===todayStr;
+      const dayS=dateObj.toLocaleDateString('en-AU',{timeZone:tz,weekday:'short',day:'numeric',month:'short'});
+      const sunsetS=sunsetD?fmt(sunsetD,tz):'--';
+      const ghS=ghD?fmt(ghD,tz):'--';
+
+      // Circle: golden hour palette (sa=4) tinted by cloud
+      const gp=skyPalette(4,cf);
+      const row=document.createElement('div');
+      row.className='wk-row'+(isToday?' today':'');
+      row.innerHTML=`
+        <div class="wk-circle" style="background:linear-gradient(145deg,${gp.top},${gp.bot})"></div>
+        <div class="wk-info">
+          <div class="wk-day">${dayS}${isToday?'<span class="today-pill">Today</span>':''}</div>
+          <div class="wk-times">${ghS} – ${sunsetS}</div>
+        </div>
+        <div class="wk-right">
+          <div class="wk-sunset">${sunsetS}</div>
+          <div class="wk-gh">Golden Hour</div>
+        </div>`;
+      wkList.appendChild(row);
+    }
+  } catch { document.getElementById('weekList').innerHTML='<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.3);font-size:14px">Failed to load forecast</div>'; }
+}
+
+function closeWeek(){ setWeek(false); }
+document.getElementById('wkBack').addEventListener('click',closeWeek);
+document.getElementById('weekBtn').addEventListener('click',()=>weekVis?closeWeek():openWeek(idx));
+
+// ══════════════════════════════════════════════════════════════
+// DROPDOWN
+// ══════════════════════════════════════════════════════════════
+const locDrop=document.getElementById('locDrop'), dim=document.getElementById('dim');
+
+function renderDrop(){
+  const list=document.getElementById('dropList'); list.innerHTML='';
+  if(!locs.length){ list.innerHTML='<div class="drop-empty">No locations yet</div>'; return; }
+  locs.forEach((loc,i)=>{
+    const item=document.createElement('div');
+    item.className='drop-item'+(i===idx?' cur':'');
+    item.innerHTML=`<div class="di-left"><div class="di-dot"></div><span class="di-name">${loc.displayName}</span></div><div class="di-rm"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>`;
+    item.addEventListener('click',e=>{ if(e.target.closest('.di-rm'))return; goTo(i);closeDrop(); });
+    item.querySelector('.di-rm').addEventListener('click',e=>{ e.stopPropagation(); locs.splice(i,1);saveLocs(); idx=Math.min(idx,Math.max(0,locs.length-1)); cache={};renderCards();renderDrop(); if(!locs.length)closeDrop(); });
+    list.appendChild(item);
+  });
+}
+
+function openDrop(){ dropOpen=true; locDrop.classList.add('open'); dim.classList.add('on'); syncChevs(); renderDrop(); }
+function closeDrop(){ dropOpen=false; locDrop.classList.remove('open'); dim.classList.remove('on'); syncChevs(); }
+dim.addEventListener('click',closeDrop);
+track.addEventListener('click',e=>{ const btn=e.target.closest('.loc-btn'); if(!btn)return; dropOpen?closeDrop():openDrop(); });
+document.getElementById('dropAdd').addEventListener('click',()=>{ closeDrop(); openSearch(); });
+
+// ══════════════════════════════════════════════════════════════
+// SEARCH
+// ══════════════════════════════════════════════════════════════
+const sOverlay=document.getElementById('searchOverlay'),sInput=document.getElementById('sInput'),sResults=document.getElementById('sResults');
+let sTimer=null;
+
+function openSearch(){ sOverlay.classList.add('open'); sInput.value='';sResults.innerHTML=''; setTimeout(()=>sInput.focus(),120); }
+function closeSearch(){ sOverlay.classList.remove('open');sInput.blur(); }
+document.getElementById('sClose').addEventListener('click',closeSearch);
+sInput.addEventListener('input',()=>{ clearTimeout(sTimer); const q=sInput.value.trim(); if(q.length<2){sResults.innerHTML='';return;} sTimer=setTimeout(()=>doSearch(q),360); });
+
+async function doSearch(q){
+  sResults.innerHTML='<div style="padding:14px;color:rgba(255,255,255,0.3);font-size:14px">Searching…</div>';
+  try{
+    const res=await searchP(q); sResults.innerHTML='';
+    if(!res.length){sResults.innerHTML='<div style="padding:14px;color:rgba(255,255,255,0.3);font-size:14px">No results</div>';return;}
+    res.forEach(r=>{
+      const city=r.address?.city||r.address?.town||r.address?.village||r.address?.county||r.name;
+      const country=r.address?.country_code?.toUpperCase()||'';
+      const displayName=country?`${city}, ${country}`:city;
+      const sub=r.display_name.split(',').slice(1,3).join(',').trim();
+      const item=document.createElement('div');
+      item.className='sr-item';
+      item.innerHTML=`<span class="sr-city">${city}</span><span class="sr-reg">${sub}</span>`;
+      item.addEventListener('click',()=>{ addLoc({name:city,country,lat:parseFloat(r.lat),lon:parseFloat(r.lon),displayName}); closeSearch(); });
+      sResults.appendChild(item);
+    });
+  }catch{ sResults.innerHTML='<div style="padding:14px;color:rgba(255,255,255,0.3);font-size:14px">Search failed</div>'; }
+}
+
+function addLoc(loc){
+  const ex=locs.findIndex(l=>Math.abs(l.lat-loc.lat)<0.02&&Math.abs(l.lon-loc.lon)<0.02);
+  if(ex>=0){goTo(ex);return;}
+  locs.push(loc);saveLocs();idx=locs.length-1;renderCards();
+}
+
+// ══════════════════════════════════════════════════════════════
+// CLOCK TICK
+// ══════════════════════════════════════════════════════════════
+function tickClocks(){
+  locs.forEach((_,i)=>{
+    const c=cache[i]; if(!c)return;
+    const now=new Date(), dtEl=document.getElementById('dt'+i);
+    if(dtEl){
+      const ds=now.toLocaleDateString('en-AU',{timeZone:c.tz,weekday:'short',day:'numeric',month:'short'});
+      const ts=now.toLocaleTimeString('en-AU',{timeZone:c.tz,hour:'numeric',minute:'2-digit'});
+      dtEl.textContent=`${ds}, ${ts}`;
+    }
+  });
+}
+setInterval(tickClocks,30000);
+setInterval(()=>locs.forEach((loc,i)=>populate(loc,i)),600000);
+
+// Resize canvases on window resize
+window.addEventListener('resize',()=>{
+  const W=window.innerWidth, H=window.innerHeight;
+  Object.entries(skyRenderers).forEach(([i,r])=>r.resize(W,H));
+});
+
+// ══════════════════════════════════════════════════════════════
+// BOOT
+// ══════════════════════════════════════════════════════════════
+renderCards();
+</script>
+</body>
+</html>

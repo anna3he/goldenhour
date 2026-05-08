@@ -52,6 +52,10 @@
       position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0;
       display: block;
     }
+    /* CSS fallback — visible instantly, before WebGL renders + if WebGL fails */
+    .card {
+      background: linear-gradient(180deg, #4a9ec8 0%, #a8d8f0 100%);
+    }
     /* Subtle bottom fade so stats bar reads clearly */
     .card-fade {
       position: absolute; bottom: 0; left: 0; right: 0; height: 40%;
@@ -322,27 +326,27 @@ function skyPalette(sa, cf) {
   const hex = ([r,g,b]) => `rgb(${r},${g},${b})`;
 
   if (sa < -6) {
-    return { top:hex(bl([12,10,22],[35,30,50],cf)), bot:hex(bl([18,13,28],[48,42,58],cf)), cf };
+    return { top:hex(bl([12,10,22],[35,30,50],cf)), bot:hex(bl([18,13,28],[48,42,58],cf)), ang:180, cf };
   }
   if (sa < 0) {
     const p=(sa+6)/6;
     return { top:hex(bl(bl([52,35,85],[85,75,95],cf),bl([95,75,135],[105,95,115],cf),p)),
-             bot:hex(bl(bl([205,115,65],[165,135,120],cf),bl([135,95,145],[140,120,135],cf),p)), cf };
+             bot:hex(bl(bl([205,115,65],[165,135,120],cf),bl([135,95,145],[140,120,135],cf),p)), ang:185, cf };
   }
   if (sa < 8) {
     const p=sa/8;
     return { top:hex(bl(bl([95,75,135],[115,95,155],cf),bl([135,110,170],[110,105,125],cf),p)),
-             bot:hex(bl(bl([230,135,52],[180,150,120],cf),bl([225,143,60],[178,150,125],cf),p)), cf };
+             bot:hex(bl(bl([230,135,52],[180,150,120],cf),bl([225,143,60],[178,150,125],cf),p)), ang:185, cf };
   }
   if (sa < 18) {
     const p=(sa-8)/10;
     return { top:hex(bl(bl([135,110,170],[110,105,125],cf),bl([68,143,210],[105,123,143],cf),p)),
-             bot:hex(bl(bl([200,160,195],[160,157,170],cf),bl([153,203,244],[145,170,190],cf),p)), cf };
+             bot:hex(bl(bl([200,160,195],[160,157,170],cf),bl([153,203,244],[145,170,190],cf),p)), ang:183, cf };
   }
   const p=Math.min(1,(sa-18)/42);
   const cT=bl([68,143,210],[38,108,192],p), cB=bl([145,198,240],[128,190,240],p);
   const oT=bl([155,165,175],[162,170,182],p), oB=bl([192,200,210],[198,205,218],p);
-  return { top:hex(bl(cT,oT,cf)), bot:hex(bl(cB,oB,cf)), cf };
+  return { top:hex(bl(cT,oT,cf)), bot:hex(bl(cB,oB,cf)), ang:180, cf };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -370,12 +374,13 @@ function cloudColour(sa, cf) {
 // One renderer per card, animated independently
 // ══════════════════════════════════════════════════════════════
 function createSkyRenderer(canvas, sa, cf) {
-  const W = canvas.offsetWidth  || window.innerWidth;
-  const H = canvas.offsetHeight || window.innerHeight;
+  // Always use window dimensions — canvas may not be laid out yet
+  const W = window.innerWidth;
+  const H = window.innerHeight;
 
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: false, antialias: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-  renderer.setSize(W, H);
+  renderer.setSize(W, H, true); // true = update canvas style width/height too
 
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-W/2, W/2, H/2, -H/2, 0.1, 100);
@@ -693,11 +698,22 @@ async function populate(loc, i){
 
     // ── Init or update sky renderer ──
     const canvas = document.getElementById('skyc'+i);
+    // Always update CSS fallback background immediately — visible before WebGL paints
+    const cardEl = canvas ? canvas.closest('.card') : null;
+    if (cardEl) {
+      const p = skyPalette(sa, cf);
+      cardEl.style.background = `linear-gradient(${p.ang||180}deg,${p.top},${p.bot})`;
+    }
     if (canvas && !skyRenderers[i]) {
-      // Size canvas to card
-      canvas.width  = canvas.offsetWidth  || window.innerWidth;
-      canvas.height = canvas.offsetHeight || window.innerHeight;
-      skyRenderers[i] = createSkyRenderer(canvas, sa, cf);
+      // Use rAF to ensure DOM is fully laid out before WebGL init
+      requestAnimationFrame(() => {
+        try {
+          skyRenderers[i] = createSkyRenderer(canvas, sa, cf);
+        } catch(e) {
+          console.warn('WebGL unavailable, using CSS gradient fallback', e);
+          if (canvas) canvas.style.display = 'none';
+        }
+      });
     } else if (canvas && skyRenderers[i]) {
       skyRenderers[i].update(sa, cf);
     }

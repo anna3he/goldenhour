@@ -307,8 +307,6 @@
   </div>
 </div>
 
-<!-- Three.js r128 -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
 'use strict';
@@ -370,150 +368,114 @@ function cloudColour(sa, cf) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// THREE.JS SKY + CLOUD RENDERER
-// One renderer per card, animated independently
+// SKY + CLOUD RENDERER — pure Canvas 2D
+// No WebGL, no shaders, no parsing issues. Works everywhere.
 // ══════════════════════════════════════════════════════════════
 function createSkyRenderer(canvas, sa, cf) {
-  // Always use window dimensions — canvas may not be laid out yet
-  const W = window.innerWidth;
-  const H = window.innerHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let W = window.innerWidth;
+  let H = window.innerHeight;
 
-  const renderer = new THREE.WebGLRenderer({ canvas, alpha: false, antialias: false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-  renderer.setSize(W, H, true); // true = update canvas style width/height too
+  // Size the canvas correctly for DPR
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
 
-  const scene = new THREE.Scene();
-  const camera = new THREE.OrthographicCamera(-W/2, W/2, H/2, -H/2, 0.1, 100);
-  camera.position.z = 10;
+  const ctx = canvas.getContext('2d');
+  // Draw in logical pixels — canvas buffer is dpr× larger for sharpness
+  ctx.scale(dpr, dpr);
+  // Reset transform each frame to avoid compound scaling with save/restore
+  const baseTransform = ctx.getTransform();
 
-  // ── Gradient background plane ──
-  const pal = skyPalette(sa, cf);
-  const bgGeo = new THREE.PlaneGeometry(W*2, H*2);
-  const bgMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uTop: { value: new THREE.Color(pal.top) },
-      uBot: { value: new THREE.Color(pal.bot) },
-      uH:   { value: H }
-    },
-    vertexShader: `
-      varying vec2 vUv;
-      void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }
-    `,
-    fragmentShader: `
-      uniform vec3 uTop; uniform vec3 uBot;
-      varying vec2 vUv;
-      void main(){ gl_FragColor=vec4(mix(uBot,uTop,vUv.y),1.0); }
-    `,
-    depthWrite: false
-  });
-  const bgMesh = new THREE.Mesh(bgGeo, bgMat);
-  bgMesh.position.z = -5;
-  scene.add(bgMesh);
-
-  // ── Cloud sprite texture (procedural, soft) ──
-  // Draw a radial gradient to a 2D canvas once, use as texture
-  const cloudTex = (() => {
-    const size = 256;
-    const c2 = document.createElement('canvas');
-    c2.width = c2.height = size;
-    const ctx = c2.getContext('2d');
-    const grad = ctx.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
-    grad.addColorStop(0,   'rgba(255,255,255,0.55)');
-    grad.addColorStop(0.35,'rgba(255,255,255,0.30)');
-    grad.addColorStop(0.65,'rgba(255,255,255,0.10)');
-    grad.addColorStop(1,   'rgba(255,255,255,0.00)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0,0,size,size);
-    const t = new THREE.CanvasTexture(c2);
-    return t;
-  })();
-
-  // ── Build cloud puffs ──
-  // Number of puffs scales with cloud fraction
-  const MAX_PUFFS = 28;
-  const minPuffs  = Math.round(cf * 4);
-  const numPuffs  = Math.max(minPuffs, Math.round(cf * MAX_PUFFS));
-
-  const cloudPuffs = [];
-  const cc = cloudColour(sa, cf);
-  const puffColour = new THREE.Color(cc.r, cc.g, cc.b);
-
+  // Cloud puff data — generated once, animated every frame
+  const numPuffs = Math.round(cf * 26);
+  const puffs = [];
   for (let k = 0; k < numPuffs; k++) {
-    const puffW = W * (0.22 + Math.random() * 0.42);
-    const puffH = puffW * (0.38 + Math.random() * 0.28);
-    const geo   = new THREE.PlaneGeometry(puffW, puffH);
-    const mat   = new THREE.MeshBasicMaterial({
-      map: cloudTex, transparent: true,
-      opacity: cf * (0.25 + Math.random() * 0.35),
-      color: puffColour, depthWrite: false, blending: THREE.NormalBlending
+    const yFrac = 0.05 + Math.random() * 0.55; // upper 60% of sky
+    puffs.push({
+      x:     (Math.random()) * W * 1.4 - W * 0.2,
+      y:     yFrac * H,
+      rx:    W * (0.10 + Math.random() * 0.20),  // x radius
+      ry:    W * (0.04 + Math.random() * 0.08),  // y radius
+      alpha: 0.12 + Math.random() * 0.22,
+      speed: (0.06 + Math.random() * 0.14) * (Math.random() > 0.5 ? 1 : -1),
+      yFrac,
     });
-    const mesh = new THREE.Mesh(geo, mat);
-
-    // Distribute vertically: clouds prefer upper 60% of sky
-    const yBand = Math.random();
-    mesh.position.x = (Math.random() - 0.5) * W * 1.6;
-    mesh.position.y = (0.1 + yBand * 0.7) * H - H/2;
-    mesh.position.z = -2 + Math.random() * 1.5;
-
-    // Drift speed — slower at top (higher altitude), faster at bottom
-    const speed = (0.008 + Math.random() * 0.018) * W * (1 - yBand * 0.5);
-    const dir   = Math.random() > 0.5 ? 1 : -1;
-    mesh.userData = { speed: speed * dir, origX: mesh.position.x };
-
-    scene.add(mesh);
-    cloudPuffs.push(mesh);
   }
 
-  // ── Animation loop ──
+  let currentSa = sa;
+  let currentCf = cf;
   let rafId = null;
   let running = true;
+  let lastT = null;
 
-  function animate() {
+  function drawFrame(ts) {
     if (!running) return;
-    rafId = requestAnimationFrame(animate);
+    rafId = requestAnimationFrame(drawFrame);
+    const dt = lastT ? Math.min((ts - lastT) / 1000, 0.05) : 0.016;
+    lastT = ts;
 
-    // Drift puffs
-    const halfW = W * 0.85;
-    cloudPuffs.forEach(p => {
-      p.position.x += p.userData.speed * 0.016; // ~60fps normalised
-      // Wrap around when off-screen
-      if (p.userData.speed > 0 && p.position.x > halfW + W * 0.3) {
-        p.position.x = -halfW - W * 0.3;
-      } else if (p.userData.speed < 0 && p.position.x < -halfW - W * 0.3) {
-        p.position.x = halfW + W * 0.3;
-      }
-    });
+    // Reset transform to DPR scale base before every frame
+    ctx.setTransform(baseTransform);
 
-    renderer.render(scene, camera);
+    const pal = skyPalette(currentSa, currentCf);
+    const cc  = cloudColour(currentSa, currentCf);
+
+    // ── Sky gradient ──
+    const grd = ctx.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, pal.top);
+    grd.addColorStop(1, pal.bot);
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, W, H);
+
+    // ── Cloud puffs ──
+    if (numPuffs > 0) {
+      const cloudR = Math.round(cc.r * 255);
+      const cloudG = Math.round(cc.g * 255);
+      const cloudB = Math.round(cc.b * 255);
+
+      puffs.forEach(p => {
+        // Drift
+        p.x += p.speed * dt * W * 0.05;
+        if (p.x > W * 1.3)  p.x = -W * 0.3;
+        if (p.x < -W * 0.3) p.x = W * 1.3;
+
+        // Soft ellipse cloud via radial gradient
+        const grd2 = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.rx);
+        grd2.addColorStop(0,   `rgba(${cloudR},${cloudG},${cloudB},${p.alpha})`);
+        grd2.addColorStop(0.5, `rgba(${cloudR},${cloudG},${cloudB},${p.alpha * 0.5})`);
+        grd2.addColorStop(1,   `rgba(${cloudR},${cloudG},${cloudB},0)`);
+
+        ctx.save();
+        ctx.scale(1, p.ry / p.rx); // squash to ellipse
+        ctx.fillStyle = grd2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y * (p.rx / p.ry), p.rx, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
   }
 
-  animate();
+  rafId = requestAnimationFrame(drawFrame);
 
   return {
     update(newSa, newCf) {
-      const newPal = skyPalette(newSa, newCf);
-      bgMat.uniforms.uTop.value.set(newPal.top);
-      bgMat.uniforms.uBot.value.set(newPal.bot);
-      const nc = cloudColour(newSa, newCf);
-      cloudPuffs.forEach(p => {
-        p.material.color.setRGB(nc.r, nc.g, nc.b);
-        p.material.opacity = newCf * (0.25 + Math.random()*0.35);
-      });
-    },
-    getBackground() {
-      const p = skyPalette(sa, cf);
-      return `linear-gradient(180deg,${p.top},${p.bot})`;
+      currentSa = newSa;
+      currentCf = newCf;
     },
     resize(w, h) {
-      renderer.setSize(w, h);
-      camera.left=-w/2; camera.right=w/2; camera.top=h/2; camera.bottom=-h/2;
-      camera.updateProjectionMatrix();
+      W = w; H = h;
+      canvas.width  = W * dpr;
+      canvas.height = H * dpr;
+      canvas.style.width  = W + 'px';
+      canvas.style.height = H + 'px';
+      ctx.scale(dpr, dpr);
     },
     destroy() {
       running = false;
       if (rafId) cancelAnimationFrame(rafId);
-      renderer.dispose();
-      cloudTex.dispose();
     }
   };
 }
@@ -705,15 +667,12 @@ async function populate(loc, i){
       cardEl.style.background = `linear-gradient(${p.ang||180}deg,${p.top},${p.bot})`;
     }
     if (canvas && !skyRenderers[i]) {
-      // Use rAF to ensure DOM is fully laid out before WebGL init
-      requestAnimationFrame(() => {
-        try {
-          skyRenderers[i] = createSkyRenderer(canvas, sa, cf);
-        } catch(e) {
-          console.warn('WebGL unavailable, using CSS gradient fallback', e);
-          if (canvas) canvas.style.display = 'none';
-        }
-      });
+      try {
+        skyRenderers[i] = createSkyRenderer(canvas, sa, cf);
+      } catch(e) {
+        console.warn('Sky renderer failed, using CSS gradient fallback', e);
+        if (canvas) canvas.style.display = 'none';
+      }
     } else if (canvas && skyRenderers[i]) {
       skyRenderers[i].update(sa, cf);
     }
